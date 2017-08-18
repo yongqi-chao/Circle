@@ -1,15 +1,30 @@
 package chao.yongqi.apps.circle;
 
+import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.pm.PackageManager;
 import android.location.Location;
-import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
+import android.support.v4.content.ContextCompat;
+import android.view.InflateException;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.RelativeLayout;
+import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -18,7 +33,6 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MapStyleOptions;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.GoogleMap.OnCameraMoveListener;
-
 
 
 /**
@@ -30,9 +44,11 @@ import com.google.android.gms.maps.GoogleMap.OnCameraMoveListener;
  * create an instance of this fragment.
  */
 public class MapFragment extends Fragment implements
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
         OnMapReadyCallback,
-        OnCameraMoveListener,
         LocationListener {
+
     // TODO: Rename parameter arguments, choose names that match
     // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
     private static final String ARG_PARAM1 = "param1";
@@ -42,58 +58,60 @@ public class MapFragment extends Fragment implements
     private String mParam1;
     private String mParam2;
 
+    //---Start-------------The Frag Initial Para -------------------------------------------------//
 
-
+    private View view;
     private GoogleMap map;
-    private SupportMapFragment mapFragment;
-    private double[] mapCenter;
-    private static final String MAP_CENTER_KEY = "MAP_CENTER_KEY";
+    private LatLng currentLocation;
+    GoogleApiClient mGoogleApiClient;
+    LocationRequest mLocationRequest;
+
+    //---End---------------The Frag Initial Para -------------------------------------------------//
+
 
 //    private OnFragmentInteractionListener mListener;
 
+
+//    public static MapFragment newInstance(String param1, String param2) {
+//        MapFragment fragment = new MapFragment();
+//        Bundle args = new Bundle();
+//        args.putString(ARG_PARAM1, param1);
+//        args.putString(ARG_PARAM2, param2);
+//        fragment.setArguments(args);
+//        return fragment;
+//    }
+
+
+    //---Start-------------The Frag Initialization -----------------------------------------------//
+
     public MapFragment() {
         // Required empty public constructor
-    }
-
-    /**
-     * Use this factory method to create a new instance of
-     * this fragment using the provided parameters.
-     *
-     * @param param1 Parameter 1.
-     * @param param2 Parameter 2.
-     * @return A new instance of fragment MapFragment.
-     */
-    // TODO: Rename and change types and number of parameters
-    public static MapFragment newInstance(String param1, String param2) {
-        MapFragment fragment = new MapFragment();
-        Bundle args = new Bundle();
-        args.putString(ARG_PARAM1, param1);
-        args.putString(ARG_PARAM2, param2);
-        fragment.setArguments(args);
-        return fragment;
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (getArguments() != null) {
-            mParam1 = getArguments().getString(ARG_PARAM1);
-            mParam2 = getArguments().getString(ARG_PARAM2);
-        }
     }
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         if (savedInstanceState != null) {
-            mapCenter = new double[2];
-            mapCenter = savedInstanceState.getDoubleArray(MAP_CENTER_KEY);
         }
-
-        // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_map, container, false);
+        //create or reawaken view
+        try {
+            view = inflater.inflate(R.layout.fragment_map, container, false);
+        } catch (InflateException e) {
+            /* map is already there, just return view as it is */
+        }
+        return view;
     }
 
+    @Override
+    public void onStart() {
+        super.onStart();
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment =
+                (SupportMapFragment) getChildFragmentManager().findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
+    }
+
+    //---End---------------The Frag Initialization -----------------------------------------------//
 
 
 //    // TODO: Rename method, update argument and hook method into UI event
@@ -136,74 +154,153 @@ public class MapFragment extends Fragment implements
 //    }
 
 
-    ///------------------------------------------------- GOOGLE MAP start ----------------------////
-
-    @Override
-    public void onStart() {
-        super.onStart();
-//        setContentView(R.layout.activity_circle_map);
-//        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        mapFragment = (SupportMapFragment) getChildFragmentManager().findFragmentById(R.id.map);
-        mapFragment.getMapAsync(this);
-    }
-
-
+    //---Start---------------Google Map Interaction ----------------------------------------------//
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
         map = googleMap;
-        map.setMapStyle(MapStyleOptions.loadRawResourceStyle(getContext(),
-                 R.raw.style_map));
-        map.setOnCameraMoveListener(this);
-
-        // Add a marker in Sydney and move the camera
-        LatLng sydney = new LatLng(-34, 151);
-        map.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
-        map.moveCamera(CameraUpdateFactory.newLatLng(sydney));
-
-        if(mapCenter == null){
-            mapCenter = new double[2];
+        map.setMapStyle(MapStyleOptions.loadRawResourceStyle(getContext(), R.raw.style_map));
+        //Initialize Google Mobile Services
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(
+                    getContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED) {
+                //Location Permission already granted
+                buildGoogleApiClient();
+                map.setMyLocationEnabled(true);
+                map.getUiSettings().setCompassEnabled(true);
+            } else {
+                //Request Location Permission
+                requestLocationPermission();
+            }
         }
-        else{
-            LatLng prevLocation = new LatLng(mapCenter[0], mapCenter[1]);
-            map.moveCamera(CameraUpdateFactory.newLatLng(prevLocation));
+        //device version less than Android 6.0 does not need permission.
+        else {
+            buildGoogleApiClient();
+            map.setMyLocationEnabled(true);
+            map.getUiSettings().setCompassEnabled(true);
         }
-
     }
 
     @Override
-    public void onCameraMove(){
-
-        System.out.print("31541433324234342324324324632323232233uwqeyioeqwué21219390921388902098213890213980231098213-8921039820189021398023124" + mapCenter[0]);
-
-        //update mapCenter
-        mapCenter[0] = map.getCameraPosition().target.latitude;
-        mapCenter[1] = map.getCameraPosition().target.longitude;
-    }
-
-    @Override
-    public void onLocationChanged(Location location){
-
-    }
-
-    @Override
-    public void onStatusChanged (String provider, int status, Bundle extras){
+    public void onLocationChanged(Location location) {
+        // initial current location
+        if (currentLocation == null) {
+            currentLocation = new LatLng(location.getLatitude(), location.getLongitude());
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 11));
+        }
+        //update current location
+        currentLocation = new LatLng(location.getLatitude(), location.getLongitude());
+        System.out.println("123 TEST 123 TEST 123 TEST 123 TES 123 TES 123 TES 123 TES 123 TES 123 TES 123 TES");
+        // Add a marker at current location
+        map.addMarker(new MarkerOptions().position(currentLocation).title("ME!!"));
+        //map.moveCamera(CameraUpdateFactory.newLatLng(sydney));
+        System.out.println("123 TEST 123 TEST 123 TEST 123 TES 123 TES 123 TES 123 TES 123 TES 123 TES 123 TES");
 
     }
-    @Override
-    public  void onProviderDisabled (String provider){}
 
-    @Override
-    public void onProviderEnabled (String provider){}
-
-
-
-    /// GOOGLE MAP ////
+    //---End----------------Google Map Interaction -----------------------------------------------//
 
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        outState.putDoubleArray(MAP_CENTER_KEY, mapCenter);
+
+        //outState.putDoubleArray(CAMERA_CENTER_KEY, cameraCenter);
     }
+
+
+
+
+    //---Start--------------Build Google Mobile Service Connection for LOCATION-------------------//
+
+    public static final int MY_PERMISSIONS_REQUEST_LOCATION = 99;
+
+    private void requestLocationPermission() {
+        // Should we show an explanation to user?
+        if (ActivityCompat.shouldShowRequestPermissionRationale(getActivity(),
+                Manifest.permission.ACCESS_FINE_LOCATION)) {
+            // Show an explanation to the user *asynchronously* -- don't block
+            // this thread waiting for the user's response! After the user
+            // sees the explanation, try again to request the permission.
+            new AlertDialog.Builder(getContext())
+                    .setTitle("Location Permission Needed")
+                    .setMessage("This app needs the Location permission, please accept to use " +
+                            "location functionality")
+                    .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            //Prompt the user once explanation has been shown
+                            ActivityCompat.requestPermissions(getActivity(),
+                                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                    MY_PERMISSIONS_REQUEST_LOCATION);
+                        }
+                    })
+                    .create().show();
+        } else {
+            // No explanation needed, we can request the permission.
+            ActivityCompat.requestPermissions(getActivity(),
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    MY_PERMISSIONS_REQUEST_LOCATION);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_LOCATION: {
+                // If request is cancelled, the result arrays are empty.
+                if (grantResults.length > 0
+                        && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // permission was granted, yay! Do the
+                    // location-related task you need to do.
+                    if (ContextCompat.checkSelfPermission(getContext(),
+                            Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED) {
+                        buildGoogleApiClient();
+                        map.setMyLocationEnabled(true);
+                        map.getUiSettings().setCompassEnabled(true);
+                    }
+                } else {
+                    // permission denied, boo! Disable the
+                    // functionality that depends on this permission.
+                    Toast.makeText(getContext(), "permission denied", Toast.LENGTH_LONG).show();
+                }
+            }
+        }
+    }
+
+    protected synchronized void buildGoogleApiClient() {
+        mGoogleApiClient = new GoogleApiClient.Builder(getContext())
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(LocationServices.API)
+                .build();
+        mGoogleApiClient.connect();
+    }
+
+    @Override
+    public void onConnected(Bundle bundle) {
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(1000);
+        mLocationRequest.setFastestInterval(1000);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+        if (ContextCompat.checkSelfPermission(getContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient,
+                    mLocationRequest, this);
+        }
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+    }
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+    }
+
+    //---End----------------Build Google Mobile Service Connection for LOCATION-------------------//
 }
